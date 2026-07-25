@@ -1,7 +1,7 @@
 [README.md](https://github.com/user-attachments/files/30372836/README.md)
 
 Cheetah Hunter is a dedicated Cheetahcoin (CHTA) edition of Solo Hunter. It monitors CHTA wallet balances and alerts users when new coins are detected, using a lightweight ESP32 CYD platform.
-<img width="1536" height="2048" alt="CHTA dashboard" src="https://github.com/user-attachments/assets/d8be091b-ee64-480a-a213-1a499963cd12" />
+<img width="2048" height="1279" alt="CHTA dashboard" src="https://github.com/user-attachments/assets/fa935d83-582f-427a-86e6-0e16c28fc639" />
 <img width="2048" height="1354" alt="CHTA HUNTER" src="https://github.com/user-attachments/assets/2866cf8e-944a-42a7-9775-d935cb943bee" />
 # CHEETAH_HUNTER v1.0.1
 
