@@ -1,103 +1,231 @@
 [README.md](https://github.com/user-attachments/files/30372836/README.md)
-CHEETAH_HUNTER v1.0.1
+# CHEETAH_HUNTER v1.0.1
 
-<img width="2048" height="1279" alt="CHTA dashboard" src="https://github.com/user-attachments/assets/fa935d83-582f-427a-86e6-0e16c28fc639" />
-<img width="2048" height="1354" alt="CHTA HUNTER" src="https://github.com/user-attachments/assets/2866cf8e-944a-42a7-9775-d935cb943bee" />
+<img width="2048" height="1279" alt="CHTA Dashboard" src="https://github.com/user-attachments/assets/fa935d83-582f-427a-86e6-0e16c28fc639" />
 
-A Cheetahcoin wallet display for the ESP32-2432S028 "Cheap Yellow Display" (CYD).
+<img width="2048" height="1354" alt="CHTA Hunter" src="https://github.com/user-attachments/assets/2866cf8e-944a-42a7-9775-d935cb943bee" />
 
-Cheetah Hunter shows your live CHTA wallet balance, estimated fiat value, CHTA price, and a BLOCK FOUND popup when the wallet balance increases. It also includes a local web dashboard for setup and live status.
+Cheetah Hunter is an ESP32 CYD wallet monitor designed specifically for **Cheetahcoin (CHTA)**.
 
-Features
-Live CHTA wallet balance from the Cheetahcoin explorer
-Wallet value in USD, GBP, or CAD
-CHTA price feed using Gleec when available, with CoinPaprika fallback
-BLOCK FOUND popup when the balance increases
-Built-in WiFi setup portal
-Local web dashboard for wallet, currency, display flip, and status
-Separate ILI9341 and ST7789 sketch versions
-Hardware
-ESP32-2432S028 / Cheap Yellow Display
-USB cable for programming
-WiFi network with internet access
-There are two sketch versions included:
+It displays your live CHTA wallet balance, estimated fiat value, current CHTA price, and shows a **BLOCK FOUND** popup whenever your monitored wallet balance increases. It also includes a built-in web dashboard for quick configuration and live status.
 
-CHEETAH_HUNTER_v1_0_1_ILI9341/CHEETAH_HUNTER_v1_0_1_ILI9341.ino
-CHEETAH_HUNTER_v1_0_1_ST7789/CHEETAH_HUNTER_v1_0_1_ST7789.ino
-Use the one that matches your CYD screen driver. If the screen is blank, mirrored, or scrambled, try the other version.
+---
 
-Install With ESP Web Flasher
-The easiest way to install Cheetah Hunter is with an ESP web flasher and the compiled Arduino *.ino.merged.bin file for your screen type. You do not need Arduino IDE for this method.
+# Features
 
-Use the exact merged .bin file for your screen:
+- Live CHTA wallet balance from the Cheetahcoin explorer
+- Wallet value in USD, GBP, or CAD
+- CHTA price feed using Gleec when available, with CoinPaprika fallback
+- BLOCK FOUND popup when the monitored wallet balance increases
+- Built-in WiFi setup portal
+- Local web dashboard for wallet configuration, currency selection, display flip, and live status
+- Separate firmware builds for ILI9341 and ST7789 displays
 
-ILI9341 screen: CHEETAH_HUNTER_v1_0_1_ILI9341.ino.merged.bin
-ST7789 screen: CHEETAH_HUNTER_v1_0_1_ST7789.ino.merged.bin
-Connect the ESP32 CYD to your computer with USB.
-Open the Cheetah Hunter ESP web flasher page.
-Choose the build that matches your screen type, either ILI9341 or ST7789.
-Click install or flash.
-If the flasher asks whether to erase the device, choose erase for a clean first install.
-Wait for flashing to finish, then reset the ESP32.
-The *.ino.merged.bin file is a complete ESP32 image and should be flashed at offset 0x0. Do not flash the merged binary at 0x10000.
+---
 
-ESP web flashing works best from Chrome or Edge on a desktop computer because the browser needs Web Serial support.
+# Hardware
 
-Build From Source
-Arduino IDE is only needed if you want to edit the code or build your own binary.
+- ESP32-2432S028 ("Cheap Yellow Display" / CYD)
+- USB cable for programming
+- WiFi connection with Internet access
 
-Install Arduino IDE.
-Install the ESP32 board package from Espressif.
-Install these libraries from the Arduino Library Manager:
-WiFiManager
-LovyanGFX
-Open the sketch for your display type.
-Select your ESP32 CYD-compatible board and the correct COM port.
-Upload the sketch, or export a compiled binary if you are preparing a web flasher release.
-First Boot Setup
-On first boot, the device starts a setup WiFi network:
+---
 
-SSID: CHEETAH_HUNTER_SETUP
-Password: solohunter
-Connect your phone or computer to that WiFi network. The setup portal should open automatically. If it does not, open:
+# Included Builds
 
+Two firmware versions are included.
+
+**ILI9341**
+
+```
+CHEETAH_HUNTER_v1_0_1_ILI9341/
+CHEETAH_HUNTER_v1_0_1_ILI9341.ino
+```
+
+**ST7789**
+
+```
+CHEETAH_HUNTER_v1_0_1_ST7789/
+CHEETAH_HUNTER_v1_0_1_ST7789.ino
+```
+
+If your display is blank, mirrored, or garbled, simply flash the other display version.
+
+---
+
+# Install Using ESP Web Flasher
+
+The easiest way to install Cheetah Hunter is by flashing one of the compiled **merged** firmware files.
+
+Use the correct file for your display:
+
+**ILI9341**
+```
+CHEETAH_HUNTER_v1_0_1_ILI9341.ino.merged.bin
+```
+
+**ST7789**
+```
+CHEETAH_HUNTER_v1_0_1_ST7789.ino.merged.bin
+```
+
+1. Connect your ESP32 CYD using USB.
+2. Open the Cheetah Hunter ESP Web Flasher.
+3. Select the firmware that matches your display.
+4. Click **Install** or **Flash**.
+5. If prompted, choose **Erase Device** for a clean installation.
+6. Wait for flashing to finish.
+7. Reboot the ESP32.
+
+**Important**
+
+The merged firmware must be flashed at **offset 0x0**.
+
+Do **NOT** flash the merged binary at **0x10000**.
+
+ESP Web Flasher works best in **Google Chrome** or **Microsoft Edge** because Web Serial support is required.
+
+---
+
+# Build From Source
+
+Arduino IDE is only required if you want to modify or compile the project yourself.
+
+Install:
+
+- Arduino IDE
+- ESP32 Board Package by Espressif
+
+Required libraries:
+
+- WiFiManager
+- LovyanGFX
+
+Then:
+
+1. Open the sketch for your display.
+2. Select your ESP32 board.
+3. Select the correct COM port.
+4. Upload normally or export a compiled binary.
+
+---
+
+# First Boot Setup
+
+On first boot the device creates a WiFi setup network.
+
+**SSID**
+
+```
+CHEETAH_HUNTER_SETUP
+```
+
+**Password**
+
+```
+solohunter
+```
+
+Connect to the WiFi network.
+
+If the setup portal does not automatically appear, open:
+
+```
 http://192.168.4.1
+```
+
 Enter your home WiFi credentials and save.
 
-After the device connects to your WiFi, the screen will show its local IP address. Open that IP address in a browser to access the Cheetah Hunter web dashboard.
+Once connected to WiFi, the device displays its local IP address.
 
-Web Dashboard
+Open that address in your browser to access the web dashboard.
+
+---
+
+# Web Dashboard
+
 From the dashboard you can:
 
-Enter or update your CHTA wallet address
-Select USD, GBP, or CAD
-Flip the display orientation
-View live balance, wallet value, and price
-Clear the BLOCK FOUND popup
-Reopen WiFi setup
-The dashboard is hosted directly by the ESP32 on your local network.
+- Enter or update your CHTA wallet address
+- Select USD, GBP, or CAD
+- Flip the display orientation
+- View live wallet balance
+- View wallet value
+- View current CHTA price
+- Clear the BLOCK FOUND popup
+- Reopen WiFi setup
 
-Important Notes
-Cheetah Hunter stores its wallet and display settings separately from Solo Hunter/DGB using the chta settings namespace.
+The dashboard is hosted directly by the ESP32.
 
-WiFi credentials are different. The ESP32 itself remembers WiFi networks across sketches and reflashes, so it may reconnect automatically if you previously set up WiFi on the same board.
+---
 
-If Arduino IDE already has an older sketch open, close and reopen the updated .ino file before uploading so you do not flash an old editor buffer.
+# Important Notes
 
-Price And Balance Data
-CHTA balance comes from the Cheetahcoin explorer.
-USD price tries the Gleec Wallet ticker feed when CHTA is present.
-USD, GBP, and CAD can fall back to CoinPaprika.
-The displayed wallet value is:
+Cheetah Hunter stores wallet and display settings separately from Solo Hunter using the **chta** preferences namespace.
 
-wallet balance x selected currency price
-Troubleshooting
-If the wallet value looks wrong, re-enter and save the wallet address in the web dashboard, then refresh the page. Make sure you are running the updated Cheetah Hunter sketch with PREFS_NS = "chta".
+The ESP32 remembers WiFi credentials across firmware updates, so your device may reconnect automatically after flashing.
 
-If the device already connects to WiFi, that is normal. ESP32 WiFi credentials are stored by the ESP32, not just by this sketch.
+If Arduino IDE already has an older sketch open, close and reopen the updated sketch before uploading to avoid flashing an older editor buffer.
 
-If the screen is upside down, use the flip setting in the web dashboard.
+---
 
-If the display is blank or garbled, upload the other screen-driver version.
+# Price and Balance Data
 
-If the setup portal does not appear, reset the device and connect manually to CHEETAH_HUNTER_SETUP.
+Wallet balances come directly from the Cheetahcoin explorer.
+
+Price data uses:
+
+- Gleec Wallet ticker (preferred)
+- CoinPaprika (fallback)
+
+Wallet value is calculated as:
+
+```
+Wallet Balance × Selected Currency Price
+```
+
+---
+
+# Troubleshooting
+
+### Wallet value looks incorrect
+
+Re-enter your wallet address in the web dashboard and save.
+
+Refresh the page.
+
+Verify you are running the latest firmware using:
+
+```
+PREFS_NS = "chta"
+```
+
+---
+
+### Device reconnects to WiFi automatically
+
+This is normal.
+
+The ESP32 stores WiFi credentials independently of the firmware.
+
+---
+
+### Screen is upside down
+
+Use the **Flip Display** option in the web dashboard.
+
+---
+
+### Display is blank or garbled
+
+Flash the other display driver version.
+
+---
+
+### Setup portal does not appear
+
+Restart the device and manually connect to:
+
+```
+CHEETAH_HUNTER_SETUP
+```
