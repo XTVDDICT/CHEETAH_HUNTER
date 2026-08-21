@@ -10,6 +10,8 @@ wallet alert.
 
 <img width="2083" height="1358" alt="chta hunter pic" src="https://github.com/user-attachments/assets/8434dfed-93ae-4e49-8359-28f076b3dc92" />
 
+<img width="1080" height="1920" alt="chta block found" src="https://github.com/user-attachments/assets/053c2df5-f206-4133-8da3-0502924b7530" />
+
 <img width="2048" height="1536" alt="CHTA dashboard" src="https://github.com/user-attachments/assets/07302980-42b2-495c-8ab6-1ad1b30fe470" />
 
 <img width="2048" height="1536" alt="chta mining dashboard" src="https://github.com/user-attachments/assets/733f7f75-5258-4f64-8b44-83bfbb1d76bb" />
