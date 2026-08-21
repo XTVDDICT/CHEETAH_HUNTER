@@ -8,9 +8,12 @@ Version 1.0.2 adds the mining engine and Mining tab while keeping the original
 wallet balance, fiat value, price display, screen flip, and `BLOCK FOUND`
 wallet alert.
 
-<img width="2048" height="1279" alt="CHTA Dashboard" src="https://github.com/user-attachments/assets/fa935d83-582f-427a-86e6-0e16c28fc639" />
+<img width="2083" height="1358" alt="chta hunter pic" src="https://github.com/user-attachments/assets/8434dfed-93ae-4e49-8359-28f076b3dc92" />
 
-<img width="2048" height="1354" alt="CHTA Hunter" src="https://github.com/user-attachments/assets/2866cf8e-944a-42a7-9775-d935cb943bee" />
+<img width="2048" height="1536" alt="CHTA dashboard" src="https://github.com/user-attachments/assets/07302980-42b2-495c-8ab6-1ad1b30fe470" />
+
+<img width="2048" height="1536" alt="chta mining dashboard" src="https://github.com/user-attachments/assets/733f7f75-5258-4f64-8b44-83bfbb1d76bb" />
+
 
 ## Highlights
 
