@@ -1,12 +1,13 @@
-# CHEETAH HUNTER v1.0.2
+# CHEETAH HUNTER v1.0.3
 
 CHEETAH HUNTER repurposes the familiar SOLO HUNTER ESP32 CYD firmware for
 Cheetahcoin. It is a live CHTA wallet display with optional SHA-256 Stratum
 mining, on-screen mining statistics, and a local Web UI for setup and status.
 
-Version 1.0.2 adds the mining engine and Mining tab while keeping the original
-wallet balance, fiat value, price display, screen flip, and `BLOCK FOUND`
-wallet alert.
+Version 1.0.3 polishes the local Web UI with fast nonblocking saves, clear
+confirmation and validation, responsive phone/desktop layouts, and improved
+price precision. It keeps the physical display layout and SHA-256 mining
+engine from v1.0.2.
 
 <img width="2083" height="1358" alt="chta hunter pic" src="https://github.com/user-attachments/assets/8434dfed-93ae-4e49-8359-28f076b3dc92" />
 
@@ -16,6 +17,16 @@ wallet alert.
 
 <img width="2048" height="1536" alt="chta mining dashboard" src="https://github.com/user-attachments/assets/733f7f75-5258-4f64-8b44-83bfbb1d76bb" />
 
+
+## What's New in v1.0.3
+
+- Settings save immediately without waiting for explorer or price lookups
+- Clear on-page success and error messages without leaving the dashboard
+- Pool host, port, and mining username validation
+- Direct visits or refreshes of `/save` return safely to the dashboard
+- Cleaner responsive layout for desktop and mobile browsers
+- Adaptive CHTA price precision so very small prices do not display as zero
+- No changes to the physical display layout or SHA-256 mining engine
 
 ## Highlights
 
@@ -28,8 +39,8 @@ wallet alert.
 - On-screen hashrate, accepted/rejected shares, best difficulty, and blocks
 - Persistent `BLOCK FOUND` popup when the configured wallet balance increases
 - Separate ILI9341 and ST7789 firmware
-- Firmware: `v1.0.2 / CHTA-HW-SHA-1`
-- Pool client identifier: `CHEETAH_HUNTER/1.0.2`
+- Firmware: `v1.0.3 / CHTA-HW-SHA-1`
+- Pool client identifier: `CHEETAH_HUNTER/1.0.3`
 
 ## Choose Your Firmware
 
@@ -37,8 +48,8 @@ Use the merged binary that matches the screen controller in your CYD.
 
 | Screen | Download |
 | --- | --- |
-| ILI9341 | [CHEETAH_HUNTER_v1_0_2_ILI9341.ino.merged.bin](https://raw.githubusercontent.com/XTVDDICT/CHEETAH_HUNTER/main/CHEETAH_HUNTER_v1_0_2_ILI9341.ino.merged.bin) |
-| ST7789 | [CHEETAH_HUNTER_v1_0_2_ST7789.ino.merged.bin](https://raw.githubusercontent.com/XTVDDICT/CHEETAH_HUNTER/main/CHEETAH_HUNTER_v1_0_2_ST7789.ino.merged.bin) |
+| ILI9341 | [CHEETAH_HUNTER_v1_0_3_ILI9341.ino.merged.bin](https://raw.githubusercontent.com/XTVDDICT/CHEETAH_HUNTER/main/CHEETAH_HUNTER_v1_0_3_ILI9341.ino.merged.bin) |
+| ST7789 | [CHEETAH_HUNTER_v1_0_3_ST7789.ino.merged.bin](https://raw.githubusercontent.com/XTVDDICT/CHEETAH_HUNTER/main/CHEETAH_HUNTER_v1_0_3_ST7789.ino.merged.bin) |
 
 The wrong screen build can produce a black screen, incorrect colors, or a
 distorted display. If that happens, flash the other version.
@@ -84,7 +95,8 @@ separate `chta` namespace so Solo Hunter wallet settings are not reused.
 
 Configure the CHTA wallet address, USD/GBP/CAD display currency, and screen
 rotation. The dashboard shows the live balance, selected fiat value, CHTA
-price, device status, and firmware build.
+price, device status, and firmware build. Saving stays on the dashboard and
+confirms immediately while wallet and price data refresh in the background.
 
 ### Mining Tab
 
@@ -100,6 +112,7 @@ When a worker is entered, Cheetah Hunter authorizes with
 `username.worker`. Use the exact host, port, username, and password format
 provided by your pool.
 
+The Web UI validates required mining fields and the Stratum port before saving.
 The Mining tab shows the connection state, mining engine, hashrate, total
 hashes, submitted/pending/accepted/rejected shares, best difficulty, pool
 difficulty, blocks found, and session uptime.
@@ -127,15 +140,15 @@ Arduino IDE is only needed to edit or compile the source.
 1. Install the Espressif ESP32 board package.
 2. Install `WiFiManager`, `LovyanGFX`, and `ArduinoJson` from Library Manager.
 3. Open the folder matching your screen:
-   - `CHEETAH_HUNTER_v1_0_2_ILI9341`
-   - `CHEETAH_HUNTER_v1_0_2_ST7789`
+   - `CHEETAH_HUNTER_v1_0_3_ILI9341`
+   - `CHEETAH_HUNTER_v1_0_3_ST7789`
 4. Keep the `.ino` file and all four `SoloHunterMiner`/`SoloHunterSha256`
    support files together in that sketch folder.
 5. Select the `ESP32-2432S028R CYD` board and the correct COM port.
 6. Select `Tools > Partition Scheme > Huge APP (3MB No OTA/1MB SPIFFS)`.
 7. Compile and upload.
 
-The default 1.2 MB application partition is too small for v1.0.2 and causes
+The default 1.2 MB application partition is too small for v1.0.3 and causes
 `text section exceeds available space in board` during compilation.
 
 ## Notes
