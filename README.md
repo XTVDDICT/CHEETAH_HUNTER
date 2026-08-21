@@ -1,231 +1,146 @@
-[README.md](https://github.com/user-attachments/files/30372836/README.md)
-# CHEETAH_HUNTER v1.0.1
+# CHEETAH HUNTER v1.0.2
+
+CHEETAH HUNTER repurposes the familiar SOLO HUNTER ESP32 CYD firmware for
+Cheetahcoin. It is a live CHTA wallet display with optional SHA-256 Stratum
+mining, on-screen mining statistics, and a local Web UI for setup and status.
+
+Version 1.0.2 adds the mining engine and Mining tab while keeping the original
+wallet balance, fiat value, price display, screen flip, and `BLOCK FOUND`
+wallet alert.
 
 <img width="2048" height="1279" alt="CHTA Dashboard" src="https://github.com/user-attachments/assets/fa935d83-582f-427a-86e6-0e16c28fc639" />
 
 <img width="2048" height="1354" alt="CHTA Hunter" src="https://github.com/user-attachments/assets/2866cf8e-944a-42a7-9775-d935cb943bee" />
 
-Cheetah Hunter is an ESP32 CYD wallet monitor designed specifically for **Cheetahcoin (CHTA)**.
-
-It displays your live CHTA wallet balance, estimated fiat value, current CHTA price, and shows a **BLOCK FOUND** popup whenever your monitored wallet balance increases. It also includes a built-in web dashboard for quick configuration and live status.
-
----
-
-# Features
+## Highlights
 
 - Live CHTA wallet balance from the Cheetahcoin explorer
-- Wallet value in USD, GBP, or CAD
-- CHTA price feed using Gleec when available, with CoinPaprika fallback
-- BLOCK FOUND popup when the monitored wallet balance increases
-- Built-in WiFi setup portal
-- Local web dashboard for wallet configuration, currency selection, display flip, and live status
-- Separate firmware builds for ILI9341 and ST7789 displays
+- CHTA wallet value in USD, GBP, or CAD
+- Gleec price feed with CoinPaprika fallback
+- Optional SHA-256 Stratum v1 mining
+- ESP32 hardware SHA acceleration with automatic CPU fallback
+- Live mining dashboard in the Web UI
+- On-screen hashrate, accepted/rejected shares, best difficulty, and blocks
+- Persistent `BLOCK FOUND` popup when the configured wallet balance increases
+- Separate ILI9341 and ST7789 firmware
+- Firmware: `v1.0.2 / CHTA-HW-SHA-1`
+- Pool client identifier: `CHEETAH_HUNTER/1.0.2`
 
----
+## Choose Your Firmware
 
-# Hardware
+Use the merged binary that matches the screen controller in your CYD.
+
+| Screen | Download |
+| --- | --- |
+| ILI9341 | [CHEETAH_HUNTER_v1_0_2_ILI9341.ino.merged.bin](https://raw.githubusercontent.com/XTVDDICT/CHEETAH_HUNTER/main/CHEETAH_HUNTER_v1_0_2_ILI9341.ino.merged.bin) |
+| ST7789 | [CHEETAH_HUNTER_v1_0_2_ST7789.ino.merged.bin](https://raw.githubusercontent.com/XTVDDICT/CHEETAH_HUNTER/main/CHEETAH_HUNTER_v1_0_2_ST7789.ino.merged.bin) |
 
-- ESP32-2432S028 ("Cheap Yellow Display" / CYD)
-- USB cable for programming
-- WiFi connection with Internet access
+The wrong screen build can produce a black screen, incorrect colors, or a
+distorted display. If that happens, flash the other version.
 
----
+## Flash With ESP Web Tool
 
-# Included Builds
+Arduino IDE is not required for the merged binaries. Use Google Chrome or
+Microsoft Edge and open the
+[Espressif ESP Web Tool](https://espressif.github.io/esptool-js/).
 
-Two firmware versions are included.
-
-**ILI9341**
-
-```
-CHEETAH_HUNTER_v1_0_1_ILI9341/
-CHEETAH_HUNTER_v1_0_1_ILI9341.ino
-```
-
-**ST7789**
-
-```
-CHEETAH_HUNTER_v1_0_1_ST7789/
-CHEETAH_HUNTER_v1_0_1_ST7789.ino
-```
-
-If your display is blank, mirrored, or garbled, simply flash the other display version.
-
----
-
-# Install Using ESP Web Flasher
-
-The easiest way to install Cheetah Hunter is by flashing one of the compiled **merged** firmware files.
-
-Use the correct file for your display:
-
-**ILI9341**
-```
-CHEETAH_HUNTER_v1_0_1_ILI9341.ino.merged.bin
-```
-
-**ST7789**
-```
-CHEETAH_HUNTER_v1_0_1_ST7789.ino.merged.bin
-```
-
-1. Connect your ESP32 CYD using USB.
-2. Open the Cheetah Hunter ESP Web Flasher.
-3. Select the firmware that matches your display.
-4. Click **Install** or **Flash**.
-5. If prompted, choose **Erase Device** for a clean installation.
-6. Wait for flashing to finish.
-7. Reboot the ESP32.
-
-**Important**
-
-The merged firmware must be flashed at **offset 0x0**.
-
-Do **NOT** flash the merged binary at **0x10000**.
-
-ESP Web Flasher works best in **Google Chrome** or **Microsoft Edge** because Web Serial support is required.
-
----
-
-# Build From Source
-
-Arduino IDE is only required if you want to modify or compile the project yourself.
-
-Install:
-
-- Arduino IDE
-- ESP32 Board Package by Espressif
-
-Required libraries:
-
-- WiFiManager
-- LovyanGFX
-
-Then:
-
-1. Open the sketch for your display.
-2. Select your ESP32 board.
-3. Select the correct COM port.
-4. Upload normally or export a compiled binary.
-
----
-
-# First Boot Setup
-
-On first boot the device creates a WiFi setup network.
-
-**SSID**
-
-```
-CHEETAH_HUNTER_SETUP
-```
-
-**Password**
-
-```
-solohunter
-```
-
-Connect to the WiFi network.
-
-If the setup portal does not automatically appear, open:
-
-```
-http://192.168.4.1
-```
-
-Enter your home WiFi credentials and save.
-
-Once connected to WiFi, the device displays its local IP address.
-
-Open that address in your browser to access the web dashboard.
-
----
-
-# Web Dashboard
-
-From the dashboard you can:
-
-- Enter or update your CHTA wallet address
-- Select USD, GBP, or CAD
-- Flip the display orientation
-- View live wallet balance
-- View wallet value
-- View current CHTA price
-- Clear the BLOCK FOUND popup
-- Reopen WiFi setup
-
-The dashboard is hosted directly by the ESP32.
-
----
-
-# Important Notes
-
-Cheetah Hunter stores wallet and display settings separately from Solo Hunter using the **chta** preferences namespace.
-
-The ESP32 remembers WiFi credentials across firmware updates, so your device may reconnect automatically after flashing.
-
-If Arduino IDE already has an older sketch open, close and reopen the updated sketch before uploading to avoid flashing an older editor buffer.
-
----
-
-# Price and Balance Data
-
-Wallet balances come directly from the Cheetahcoin explorer.
-
-Price data uses:
-
-- Gleec Wallet ticker (preferred)
-- CoinPaprika (fallback)
-
-Wallet value is calculated as:
-
-```
-Wallet Balance × Selected Currency Price
-```
-
----
-
-# Troubleshooting
-
-### Wallet value looks incorrect
-
-Re-enter your wallet address in the web dashboard and save.
-
-Refresh the page.
-
-Verify you are running the latest firmware using:
-
-```
-PREFS_NS = "chta"
-```
-
----
-
-### Device reconnects to WiFi automatically
-
-This is normal.
-
-The ESP32 stores WiFi credentials independently of the firmware.
-
----
-
-### Screen is upside down
-
-Use the **Flip Display** option in the web dashboard.
-
----
-
-### Display is blank or garbled
-
-Flash the other display driver version.
-
----
-
-### Setup portal does not appear
-
-Restart the device and manually connect to:
-
-```
-CHEETAH_HUNTER_SETUP
-```
+1. Download the merged `.bin` file for your screen.
+2. Connect the ESP32 CYD with a data-capable USB cable.
+3. Close Arduino Serial Monitor or any other program using the COM port.
+4. Click `Connect` and select the ESP32 USB serial port.
+5. Select the downloaded Cheetah Hunter merged `.bin` file.
+6. Set the flash address to `0x0`.
+7. Use `DIO`, `80 MHz`, and `4 MB` when those options are shown.
+8. Enable erase flash for a clean installation, then click `Program`.
+9. Wait for flashing and verification to finish before resetting the board.
+
+These are complete 4 MB flash images. Do not flash a merged binary at
+`0x10000`. Erasing the full flash clears saved WiFi, wallet, currency, display,
+and mining settings.
+
+If the Web Tool cannot connect, close other serial applications, try baud rate
+`115200`, or hold the board's `BOOT` button while connecting.
+
+## First-Time Setup
+
+1. Connect to the WiFi network `CHEETAH_HUNTER_SETUP`.
+2. Enter password `solohunter`.
+3. Open `http://192.168.4.1` if the setup page does not appear automatically.
+4. Enter your home WiFi information and save.
+5. Open the local IP address shown on the Cheetah Hunter screen.
+
+The ESP32 can remember WiFi credentials across firmware flashes unless the
+device is fully erased. Cheetah Hunter stores its own settings under the
+separate `chta` namespace so Solo Hunter wallet settings are not reused.
+
+## Web UI
+
+### Display Tab
+
+Configure the CHTA wallet address, USD/GBP/CAD display currency, and screen
+rotation. The dashboard shows the live balance, selected fiat value, CHTA
+price, device status, and firmware build.
+
+### Mining Tab
+
+Enable mining and enter the values required by your Cheetahcoin-compatible
+SHA-256 pool:
+
+- Pool host and Stratum port
+- CHTA wallet address or pool username
+- Optional worker name
+- Pool password, normally `x` unless your pool specifies another value
+
+When a worker is entered, Cheetah Hunter authorizes with
+`username.worker`. Use the exact host, port, username, and password format
+provided by your pool.
+
+The Mining tab shows the connection state, mining engine, hashrate, total
+hashes, submitted/pending/accepted/rejected shares, best difficulty, pool
+difficulty, blocks found, and session uptime.
+
+## Mining Statistics
+
+The left side of the physical display shows:
+
+- `HASH` - current hashrate
+- `ACC` - accepted shares
+- `REJ` - rejected shares
+- `BEST` - best share difficulty
+- `BLK` - hashes that met the network target during the current session
+
+Accepted shares are not automatically blocks. The `BLK` counter increases only
+when a verified hash also meets the network target supplied by the pool job.
+
+The full-screen `BLOCK FOUND` popup is separate. It appears when the configured
+CHTA wallet balance increases.
+
+## Build From Source
+
+Arduino IDE is only needed to edit or compile the source.
+
+1. Install the Espressif ESP32 board package.
+2. Install `WiFiManager`, `LovyanGFX`, and `ArduinoJson` from Library Manager.
+3. Open the folder matching your screen:
+   - `CHEETAH_HUNTER_v1_0_2_ILI9341`
+   - `CHEETAH_HUNTER_v1_0_2_ST7789`
+4. Keep the `.ino` file and all four `SoloHunterMiner`/`SoloHunterSha256`
+   support files together in that sketch folder.
+5. Select the `ESP32-2432S028R CYD` board and the correct COM port.
+6. Select `Tools > Partition Scheme > Huge APP (3MB No OTA/1MB SPIFFS)`.
+7. Compile and upload.
+
+The default 1.2 MB application partition is too small for v1.0.2 and causes
+`text section exceeds available space in board` during compilation.
+
+## Notes
+
+- Mining mode supports SHA-256 only.
+- Cheetah Hunter is a small ESP32 lottery miner, not an ASIC.
+- Mining rewards are not guaranteed.
+- Mining session counters reset after rebooting or reconfiguring mining.
+- Do not expose the device Web UI directly to the public internet.
+- SHA-256 checksums are listed in [`SHA256SUMS.txt`](SHA256SUMS.txt).
+
+This is hobby firmware. Flashing and cryptocurrency mining are performed at
+your own risk.
