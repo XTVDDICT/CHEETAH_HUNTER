@@ -13,9 +13,11 @@ engine from v1.0.2.
 
 <img width="1080" height="1920" alt="chta block found" src="https://github.com/user-attachments/assets/053c2df5-f206-4133-8da3-0502924b7530" />
 
-<img width="2048" height="1536" alt="CHTA dashboard" src="https://github.com/user-attachments/assets/07302980-42b2-495c-8ab6-1ad1b30fe470" />
+<img width="2048" height="1536" alt="chta mining dashboard" src="https://github.com/user-attachments/assets/c1fbad37-468c-4fdb-9731-5c7f771a90b9" />
+<img width="2048" height="1536" alt="CHTA dashboard" src="https://github.com/user-attachments/assets/21c988c8-975f-48de-86e5-4e7e9ffdd89c" />
 
-<img width="2048" height="1536" alt="chta mining dashboard" src="https://github.com/user-attachments/assets/733f7f75-5258-4f64-8b44-83bfbb1d76bb" />
+
+
 
 
 ## What's New in v1.0.3
