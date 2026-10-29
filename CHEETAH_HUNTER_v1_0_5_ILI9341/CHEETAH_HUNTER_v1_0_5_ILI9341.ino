@@ -1,4 +1,4 @@
-// CHEETAH HUNTER v1.0.4 HELIOS engine source for ILI9341 CYD
+// CHEETAH HUNTER v1.0.5 HELIOS-PIPELINED-V2 source for ILI9341 CYD
 // Public/shareable build for ILI9341 screen variant
 //
 // Features:
@@ -6,23 +6,30 @@
 // - local config page after connected
 // - edit wallet + screen flip from browser
 // - live CHTA wallet balance with miner-friendly refresh timing
-// - cached CHTA/USD/GBP/CAD prices with Gleec/CoinPaprika fallback
+// - cached CHTA/USD/GBP/CAD/EUR prices with Gleec/CoinPaprika fallback
 // - BLOCK FOUND popup on wallet balance increase
 // - HELIOS hardware SHA-256d engine with second-core software mining
 //
-// Required library:
+// Required libraries:
 //   WiFiManager by tzapu / tablatronix
+//   XPT2046_Touchscreen by Paul Stoffregen
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <ArduinoJson.h>
 #include <Preferences.h>
 #include <LovyanGFX.hpp>
+#include <SPI.h>
+#include <XPT2046_Touchscreen.h>
 #include <WiFiManager.h>
 #include <WebServer.h>
 #include "SoloHunterMiner.h"
 #include "SoloHunterSha256.h"
 #include "ChtaBalance.h"
+#include "HeliosNetworkMemory.h"
+#include "HeliosCooperativeTls.h"
+#include <esp32-hal-cpu.h>
 #include <esp_pm.h>
 
 const char* AP_SSID = "CHEETAH_HUNTER_SETUP";
@@ -66,8 +73,10 @@ class ChtaNetworkPriority {
   UBaseType_t previous_;
 };
 
-String coinpaprikaTickerUrl() {
-  return String("https://api.coinpaprika.com/v1/tickers/chta-cheetahcoin?quotes=USD,GBP,CAD");
+String coinpaprikaTickerUrl(const String& currencyCode) {
+  // CoinPaprika accepts at most three quote currencies per request.
+  const char* quotes = currencyCode == "EUR" ? "USD,EUR" : "USD,GBP,CAD";
+  return String("https://api.coinpaprika.com/v1/tickers/chta-cheetahcoin?quotes=") + quotes;
 }
 
 String gleecWalletTickersUrl() {
@@ -119,6 +128,9 @@ public:
     setPanel(&_panel);
   }
 } tft;
+
+SPIClass touchSpi(VSPI);
+XPT2046_Touchscreen touch(33);
 
 static constexpr uint16_t C_BG      = TFT_BLACK;
 static constexpr uint16_t C_GREEN   = 0x07E0;
@@ -2287,6 +2299,7 @@ float balanceCHTA = 0.0f;
 float chtaPriceUsd = 0.0f;
 float chtaPriceGbp = 0.0f;
 float chtaPriceCad = 0.0f;
+float chtaPriceEur = 0.0f;
 float walletFiatValue = 0.0f;
 float lastBalanceCHTA = -1.0f;
 float deltaCHTA = 0.0f;
@@ -2309,6 +2322,8 @@ bool pendingFiatRefresh = false;
 unsigned long pendingDataRefreshAt = 0;
 
 float miningHashrateKh = 0.0f;
+float miningPrimaryHashrateKh = 0.0f;
+float miningAuxiliaryHashrateKh = 0.0f;
 uint64_t miningTotalHashes = 0;
 uint32_t miningSubmittedShares = 0;
 uint32_t miningPendingShares = 0;
@@ -2342,7 +2357,7 @@ String fmtDecimals(float v, uint8_t decimals) {
 String normalizeCurrency(String currency) {
   currency.trim();
   currency.toUpperCase();
-  if (currency == "GBP" || currency == "CAD") return currency;
+  if (currency == "GBP" || currency == "CAD" || currency == "EUR") return currency;
   return "USD";
 }
 
@@ -2353,16 +2368,19 @@ String currentCurrencyCode() {
 String currencyDisplayName(const String& currencyCode) {
   if (currencyCode == "GBP") return "Great British Pound";
   if (currencyCode == "CAD") return "Canadian Dollar";
+  if (currencyCode == "EUR") return "Euro";
   return "US Dollar";
 }
 
 String currencyPrefix(const String& currencyCode) {
+  if (currencyCode == "EUR") return "\xE2\x82\xAC";
   if (currencyCode == "GBP") return "\xC2\xA3";
   if (currencyCode == "CAD") return "CAD$";
   return "$";
 }
 
 String currencyPrefixHtml(const String& currencyCode) {
+  if (currencyCode == "EUR") return "&euro;";
   if (currencyCode == "GBP") return "&pound;";
   if (currencyCode == "CAD") return "CAD$";
   return "$";
@@ -2371,6 +2389,7 @@ String currencyPrefixHtml(const String& currencyCode) {
 float chtaPriceForCurrency(const String& currencyCode) {
   if (currencyCode == "GBP") return chtaPriceGbp;
   if (currencyCode == "CAD") return chtaPriceCad;
+  if (currencyCode == "EUR") return chtaPriceEur;
   return chtaPriceUsd;
 }
 
@@ -2400,7 +2419,8 @@ String currentFiatAmountText(float amount, uint8_t decimals) {
   return formatFiatAmount(currentCurrencyCode(), amount, decimals);
 }
 
-void drawPoundGlyph2x(int x, int y, uint16_t color, uint16_t bg) {
+void drawCurrencyGlyph2x(const String& currencyCode, int x, int y, uint16_t color, uint16_t bg) {
+  HeliosDisplayWorkGuard displayWork;
   static const uint8_t poundGlyph[8] = {
     0b001110,
     0b010001,
@@ -2412,10 +2432,22 @@ void drawPoundGlyph2x(int x, int y, uint16_t color, uint16_t bg) {
     0b111110
   };
 
+  static const uint8_t euroGlyph[8] = {
+    0b001110,
+    0b010001,
+    0b111100,
+    0b010000,
+    0b111100,
+    0b010000,
+    0b010001,
+    0b001110
+  };
+  const uint8_t* glyph = currencyCode == "EUR" ? euroGlyph : poundGlyph;
+
   tft.fillRect(x, y, 12, 16, bg);
   for (int row = 0; row < 8; ++row) {
     for (int col = 0; col < 6; ++col) {
-      if (poundGlyph[row] & (1 << (5 - col))) {
+      if (glyph[row] & (1 << (5 - col))) {
         tft.fillRect(x + (col * 2), y + (row * 2), 2, 2, color);
       }
     }
@@ -2446,16 +2478,6 @@ float extractJsonFloat(const String& body, const char* key) {
   return sub.toFloat();
 }
 
-
-float extractCoinpaprikaQuotePrice(const String& rawBody, const char* currencyCode) {
-  String body = rawBody;
-  body.replace("\n", "");
-  body.replace("\r", "");
-  body.replace("\t", "");
-  body.replace(" ", "");
-  String key = "\"" + String(currencyCode) + "\":{\"price\":";
-  return extractJsonFloat(body, key.c_str());
-}
 
 String compactJson(String body) {
   body.replace("\n", "");
@@ -2535,6 +2557,7 @@ void savePrefs() {
   prefs.putFloat("lastusd", chtaPriceUsd);
   prefs.putFloat("lastgbp", chtaPriceGbp);
   prefs.putFloat("lastcad", chtaPriceCad);
+  prefs.putFloat("lasteur", chtaPriceEur);
   prefs.end();
 }
 
@@ -2555,6 +2578,7 @@ void loadPrefs() {
   chtaPriceUsd = prefs.getFloat("lastusd", 0.0f);
   chtaPriceGbp = prefs.getFloat("lastgbp", 0.0f);
   chtaPriceCad = prefs.getFloat("lastcad", 0.0f);
+  chtaPriceEur = prefs.getFloat("lasteur", 0.0f);
   prefs.end();
   trimConfig();
   syncFiatAvailability();
@@ -2578,11 +2602,14 @@ void saveLastFiatPrices() {
   prefs.putFloat("lastusd", chtaPriceUsd);
   prefs.putFloat("lastgbp", chtaPriceGbp);
   prefs.putFloat("lastcad", chtaPriceCad);
+  prefs.putFloat("lasteur", chtaPriceEur);
   prefs.end();
 }
 
 void applyRotation() {
+  HeliosDisplayWorkGuard displayWork;
   tft.setRotation(cfgFlip ? 3 : 1);
+  touch.setRotation(cfgFlip ? 3 : 1);
 }
 
 String currentIpText() {
@@ -2621,6 +2648,8 @@ SoloHunterMiningConfig currentMiningEngineConfig() {
 void syncMiningStats() {
   SoloHunterMiningStats stats = soloHunterMinerGetStats();
   miningHashrateKh = stats.hashrateKh;
+  miningPrimaryHashrateKh = stats.primaryHashrateKh;
+  miningAuxiliaryHashrateKh = stats.auxiliaryHashrateKh;
   miningTotalHashes = stats.totalHashes;
   miningSubmittedShares = stats.submittedShares;
   miningPendingShares = stats.pendingShares;
@@ -2641,7 +2670,7 @@ String currentMiningEngineText() {
 }
 
 String formatMiningHashrate() {
-  return String((uint32_t)lroundf(miningHashrateKh)) + "KH";
+  return String((uint32_t)lroundf(miningHashrateKh)) + " kH/s";
 }
 
 String uint64Text(uint64_t value) {
@@ -2690,6 +2719,7 @@ String formatMiningDiffCompact() {
 }
 
 void drawMiningStats() {
+  HeliosDisplayWorkGuard displayWork;
   syncMiningStats();
   if (!cfgMiningEnabled || isBlockPopupVisible()) return;
 
@@ -2697,7 +2727,8 @@ void drawMiningStats() {
   tft.setTextSize(1);
   tft.setTextColor(C_GREEN, C_BG);
   tft.setCursor(38, 58);
-  tft.print(formatMiningHashrate());
+  // kH/s is the row label so four-digit rates fit the fixed-width column.
+  tft.print((uint32_t)lroundf(miningHashrateKh));
   tft.setCursor(38, 70);
   tft.print(miningAcceptedShares);
   tft.setCursor(38, 82);
@@ -2709,6 +2740,7 @@ void drawMiningStats() {
 }
 
 void drawBorder() {
+  HeliosDisplayWorkGuard displayWork;
   // Semi-thick neon border
   tft.drawRect(0, 0, 320, 240, C_GREEN);
   tft.drawRect(1, 1, 318, 238, C_GREEN);
@@ -2717,6 +2749,7 @@ void drawBorder() {
 }
 
 void drawStaticLayout() {
+  HeliosDisplayWorkGuard displayWork;
   tft.fillScreen(C_BG);
   drawBorder();
 
@@ -2737,7 +2770,7 @@ void drawStaticLayout() {
     tft.setTextSize(1);
     tft.setTextColor(C_GREEN, C_BG);
     tft.setCursor(8, 58);
-    tft.print("HASH");
+    tft.print("kH/s");
     tft.setCursor(8, 70);
     tft.print("ACC");
     tft.setCursor(8, 82);
@@ -2764,6 +2797,7 @@ void drawStaticLayout() {
 }
 
 void drawValues() {
+  HeliosDisplayWorkGuard displayWork;
   tft.fillRect(20, 194, 280, 24, C_BG);
   tft.setTextSize(2);
   walletFiatValue = 0.0f;
@@ -2775,13 +2809,13 @@ void drawValues() {
 
     String currencyCode = currentCurrencyCode();
     String fiatText = currentCurrencyWaitText();
-    bool drawCustomPound = false;
+    bool drawCustomCurrency = false;
     String fiatAmountText = "";
     if (haveFiatData) {
       walletFiatValue = currentWalletFiatValue();
-      if (currencyCode == "GBP") {
+      if (currencyCode == "GBP" || currencyCode == "EUR") {
         fiatAmountText = fmt2(walletFiatValue);
-        drawCustomPound = true;
+        drawCustomCurrency = true;
       } else {
         fiatText = currentFiatAmountText(walletFiatValue, 2);
       }
@@ -2790,7 +2824,7 @@ void drawValues() {
       tft.setTextColor(C_WARN, C_BG);
     }
 
-    if (drawCustomPound) {
+    if (drawCustomCurrency) {
       const int poundWidth = 12;
       const int poundGap = 2;
       int amountX = 296 - tft.textWidth(fiatAmountText);
@@ -2801,7 +2835,7 @@ void drawValues() {
         amountX = poundX + poundWidth + poundGap;
       }
 
-      drawPoundGlyph2x(poundX, 196, C_GREEN, C_BG);
+      drawCurrencyGlyph2x(currencyCode, poundX, 196, C_GREEN, C_BG);
       tft.setCursor(amountX, 196);
       tft.print(fiatAmountText);
     } else {
@@ -2830,6 +2864,7 @@ void drawValues() {
 }
 
 void drawConnectionStatus() {
+  HeliosDisplayWorkGuard displayWork;
   tft.fillRect(20, 224, 280, 12, C_BG);
   tft.setTextSize(1);
   tft.setTextColor(WiFi.status() == WL_CONNECTED ? C_GREEN : C_ALERT, C_BG);
@@ -2850,6 +2885,7 @@ void drawConnectionStatus() {
 }
 
 void drawBlockPopup() {
+  HeliosDisplayWorkGuard displayWork;
   if (!isBlockPopupVisible()) return;
 
   int w = 240;
@@ -2897,8 +2933,37 @@ void clearBlockPopup() {
   drawValues();
 }
 
+void serviceBlockPopupTouch() {
+  static uint32_t lastPollAt = 0;
+  static bool waitForRelease = false;
+  if (!isBlockPopupVisible() && !waitForRelease) return;
+
+  uint32_t now = millis();
+  if ((uint32_t)(now - lastPollAt) < 20) return;
+  lastPollAt = now;
+  HeliosDisplayWorkGuard touchWork;
+  bool pressed = false;
+  if (touch.touched()) {
+    TS_Point point = touch.getPoint();
+    pressed = point.z >= 400;
+  }
+  if (waitForRelease) {
+    if (!pressed) waitForRelease = false;
+    return;
+  }
+  if (pressed && isBlockPopupVisible()) {
+    waitForRelease = true;
+    clearBlockPopup();
+  }
+}
+
 
 bool fetchChtaBalance() {
+  HeliosNetworkMemoryGuard networkWork(portMAX_DELAY, true);
+  if (!networkWork) {
+    statusText = "BAL RETRY";
+    return false;
+  }
   if (WiFi.status() != WL_CONNECTED) {
     statusText = "BAL RETRY";
     return false;
@@ -2923,21 +2988,28 @@ bool fetchChtaBalance() {
 
 
 bool applyCoinpaprikaFiatPrices(const String& body) {
+  JsonDocument document;
+  if (deserializeJson(document, body)) return false;
   bool updated = false;
-  float usd = extractCoinpaprikaQuotePrice(body, "USD");
-  float gbp = extractCoinpaprikaQuotePrice(body, "GBP");
-  float cad = extractCoinpaprikaQuotePrice(body, "CAD");
+  float usd = document["quotes"]["USD"]["price"] | 0.0f;
+  float gbp = document["quotes"]["GBP"]["price"] | 0.0f;
+  float cad = document["quotes"]["CAD"]["price"] | 0.0f;
+  float eur = document["quotes"]["EUR"]["price"] | 0.0f;
 
-  if (usd > 0.0f) {
+  if (isfinite(usd) && usd > 0.0f) {
     chtaPriceUsd = usd;
     updated = true;
   }
-  if (gbp > 0.0f) {
+  if (isfinite(gbp) && gbp > 0.0f) {
     chtaPriceGbp = gbp;
     updated = true;
   }
-  if (cad > 0.0f) {
+  if (isfinite(cad) && cad > 0.0f) {
     chtaPriceCad = cad;
+    updated = true;
+  }
+  if (isfinite(eur) && eur > 0.0f) {
+    chtaPriceEur = eur;
     updated = true;
   }
 
@@ -2951,12 +3023,12 @@ bool applyCoinpaprikaFiatPrices(const String& body) {
 bool fetchGleecWalletUsdPrice(float& price) {
   price = 0.0f;
 
-  WiFiClientSecure client;
+  HeliosCooperativeTls client(20000);
   client.setInsecure();
   HTTPClient http;
   http.setConnectTimeout(PRICE_CONNECT_TIMEOUT_MS);
   http.setTimeout(PRICE_HTTP_TIMEOUT_MS);
-  http.setUserAgent("ESP32-CHEETAH-HUNTER/1.0.4");
+  http.setUserAgent("ESP32-CHEETAH-HUNTER/1.0.5");
 
   if (!http.begin(client, gleecWalletTickersUrl())) return false;
 
@@ -3033,6 +3105,8 @@ void markFiatFetchFailed(const String& detail) {
 }
 
 bool fetchChtaFiatPrices() {
+  HeliosNetworkMemoryGuard networkWork(portMAX_DELAY, true);
+  if (!networkWork) return false;
   ChtaNetworkPriority networkPriority;
   if (WiFi.status() != WL_CONNECTED) {
     markFiatFetchFailed(currentCurrencyRetryText());
@@ -3047,14 +3121,14 @@ bool fetchChtaFiatPrices() {
     if (currentCurrencyCode() == "USD") return haveFiatData;
   }
 
-  WiFiClientSecure client;
+  HeliosCooperativeTls client(20000);
   client.setInsecure();
   HTTPClient http;
   http.setConnectTimeout(PRICE_CONNECT_TIMEOUT_MS);
   http.setTimeout(PRICE_HTTP_TIMEOUT_MS);
-  http.setUserAgent("ESP32-CHEETAH-HUNTER/1.0.4");
+  http.setUserAgent("ESP32-CHEETAH-HUNTER/1.0.5");
 
-  if (!http.begin(client, coinpaprikaTickerUrl())) {
+  if (!http.begin(client, coinpaprikaTickerUrl(currentCurrencyCode()))) {
     markFiatFetchFailed(currentCurrencyRetryText());
     return false;
   }
@@ -3176,7 +3250,7 @@ void handleRoot() {
   String page;
   page.reserve(18000);
   page += "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  page += "<title>CHEETAH HUNTER v1.0.4 Control Panel</title>";
+  page += "<title>CHEETAH HUNTER v1.0.5 Control Panel</title>";
   page += "<style>";
   page += ":root{--bg:#07100a;--surface:#101a13;--surface-2:#0b140e;--line:#294433;--line-strong:#3a6047;--accent:#62ff9b;--accent-strong:#1cc86d;--text:#edf7f0;--muted:#9db5a5;--warn:#f4c95d;--error:#ff7b72;--info:#73b7ff}";
   page += "*{box-sizing:border-box;letter-spacing:0}body{margin:0;min-height:100vh;padding:20px;color:var(--text);font-family:'Segoe UI','Trebuchet MS',sans-serif;background:var(--bg)}";
@@ -3188,13 +3262,13 @@ void handleRoot() {
   page += ".stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{min-height:124px;padding:14px;border-radius:6px;background:var(--surface-2);border:1px solid var(--line)}.mining-stats .stat{min-height:108px}.mining-stats .stat strong{font-size:21px}.stat-label{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:9px}.stat strong{display:block;font-size:27px;line-height:1.15;margin-bottom:7px;overflow-wrap:anywhere}.stat small{color:var(--muted);font-size:12px;line-height:1.4}";
   page += ".miner-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}.miner-meta div{padding:11px 12px;background:var(--surface-2);border:1px solid var(--line);border-radius:6px}.miner-meta span{display:block;color:var(--muted);font-size:11px;font-weight:700}.miner-meta strong{display:block;margin-top:5px;font-size:14px;overflow-wrap:anywhere}";
   page += ".field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.full{grid-column:1/-1}.field-label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:7px}input{width:100%;min-height:46px;padding:11px 12px;border-radius:6px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--text);font-size:15px;outline:none}";
-  page += "input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(98,255,155,.12)}input:invalid{border-color:var(--error)}.choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:16px}.choice{display:block;position:relative;cursor:pointer}.choice input{position:absolute;opacity:0;pointer-events:none}.choice-body{display:block;min-height:116px;padding:13px;border-radius:6px;border:1px solid var(--line-strong);background:var(--surface-2)}";
+  page += "input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(98,255,155,.12)}input:invalid{border-color:var(--error)}.choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:16px}.choice{display:block;position:relative;cursor:pointer}.choice input{position:absolute;opacity:0;pointer-events:none}.choice-body{display:block;min-height:116px;padding:13px;border-radius:6px;border:1px solid var(--line-strong);background:var(--surface-2)}";
   page += ".choice input:checked + .choice-body{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.choice-code{display:block;font-size:18px;font-weight:700;margin-bottom:7px}.choice-label{display:block;font-size:13px;font-weight:700;margin-bottom:5px}.choice-hint{display:block;font-size:11px;color:var(--muted);line-height:1.4}.toggle-row{display:grid;gap:10px;margin:16px 0}.toggle{display:flex;align-items:center;gap:10px;padding:12px;border-radius:6px;background:var(--surface-2);border:1px solid var(--line)}.toggle input{width:18px;height:18px;min-height:18px;accent-color:var(--accent-strong);margin:0}";
   page += ".actions{display:flex;gap:10px;flex-wrap:wrap}button{appearance:none;min-height:42px;border:1px solid transparent;border-radius:6px;padding:10px 15px;font-weight:700;font-size:14px;cursor:pointer}button:focus-visible{outline:3px solid rgba(98,255,155,.3);outline-offset:2px}button:disabled{cursor:wait;opacity:.65}.primary{background:var(--accent-strong);color:#031108}.primary:hover{background:var(--accent)}.secondary{background:var(--surface-2);color:var(--text);border-color:var(--line-strong)}.secondary:hover{border-color:var(--accent)}";
   page += ".action-panel{display:flex;justify-content:space-between;align-items:center;gap:16px}.notice{position:sticky;top:10px;z-index:10;display:flex;align-items:center;min-height:46px;padding:11px 14px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:14px;font-weight:700}.notice[hidden]{display:none}.notice.busy{border-color:var(--info);color:#dcecff}.notice.success{border-color:var(--accent-strong);color:#dfffea}.notice.error{border-color:var(--error);color:#ffd9d6}";
   page += "@media (max-width:900px){body{padding:14px}.hero.panel{grid-template-columns:1fr;align-items:start}.chip-row{justify-content:flex-start}.layout,.field-grid{grid-template-columns:1fr}.tab-button{flex:1;min-width:0}.action-panel{align-items:flex-start}}@media (max-width:560px){body{padding:10px}.panel{padding:14px}.stats,.choices,.mining-stats,.miner-meta{grid-template-columns:1fr}.stat{min-height:0}.choice-body{min-height:0}.actions button{width:100%}.pill{max-width:100%;overflow-wrap:anywhere}}";
   page += "</style></head><body><main class='shell'>";
-  page += "<section class='hero panel'><div><div class='eyebrow'>v1.0.4 CONTROL PANEL</div>";
+  page += "<section class='hero panel'><div><div class='eyebrow'>v1.0.5 CONTROL PANEL</div>";
   page += "<h1>CHEETAH HUNTER</h1><p class='hero-copy'>Cheetahcoin wallet display and SHA-256 miner</p></div>";
   page += "<div class='chip-row'>";
   page += "<span class='pill' id='ci'>IP: " + htmlEscape(currentIpText()) + "</span>";
@@ -3211,7 +3285,7 @@ void handleRoot() {
   page += "<div class='stats'>";
   page += "<article class='stat'><span class='stat-label'>Wallet Balance</span><strong id='bd'>" + htmlEscape(walletBalanceText) + "</strong><small>Current Cheetahcoin balance from CHTA Electrum servers.</small></article>";
   page += "<article class='stat'><span class='stat-label'>Wallet Value</span><strong id='wf'>" + walletValueText + "</strong><small>The value currently shown on the device.</small></article>";
-  page += "<article class='stat'><span class='stat-label'>CHTA Price</span><strong id='pf'>" + priceText + "</strong><small>Uses Gleec when CHTA is present; otherwise CoinPaprika USD/GBP/CAD.</small></article>";
+  page += "<article class='stat'><span class='stat-label'>CHTA Price</span><strong id='pf'>" + priceText + "</strong><small>Uses Gleec when CHTA is present; otherwise CoinPaprika USD/GBP/CAD/EUR.</small></article>";
   page += "<article class='stat'><span class='stat-label'>Screen Mode</span><strong id='sm'>" + htmlEscape(screenModeText) + "</strong><small>Current display orientation.</small></article>";
   page += "</div></div>";
   page += "<div class='panel'><div class='section-head'><div><h2>Device Settings</h2><p>Everything important is on one page so the device is easier to configure and check at a glance.</p></div></div>";
@@ -3224,6 +3298,7 @@ void handleRoot() {
   page += currencyChoiceHtml("USD", "US Dollar", "Standard US dollar wallet value");
   page += currencyChoiceHtml("GBP", "Great British Pound", "British pound wallet value");
   page += currencyChoiceHtml("CAD", "Canadian Dollar", "Canadian dollar wallet value");
+  page += currencyChoiceHtml("EUR", "Euro", "Euro wallet value");
   page += "</div>";
   page += "<div class='toggle-row'>";
   page += "<label class='toggle'><input type='checkbox' name='flip' " + String(cfgFlip ? "checked" : "") + "><span>Flip screen 180&deg;</span></label>";
@@ -3234,7 +3309,7 @@ void handleRoot() {
   page += "<section class='layout'>";
   page += "<div class='panel'><div class='section-head'><div><h2>Mining Dashboard</h2><p>Live SHA-256 mining data.</p></div><div class='section-pills'><span class='pill' id='ms0'>" + htmlEscape(miningStateText) + "</span><span class='pill' id='mp0'>" + htmlEscape(miningPoolText) + "</span></div></div>";
   page += "<div class='stats mining-stats'>";
-  page += "<article class='stat'><span class='stat-label'>Hashrate</span><strong id='mh'>" + htmlEscape(miningHashrateText) + "</strong><small>Current SHA-256 hashing speed.</small></article>";
+  page += "<article class='stat'><span class='stat-label'>Hashrate</span><strong id='mh'>" + htmlEscape(miningHashrateText) + "</strong><small id='mhr'>Hardware + software helper, in kH/s.</small></article>";
   page += "<article class='stat'><span class='stat-label'>Hash Engine</span><strong id='me'>" + htmlEscape(miningEngineText) + "</strong></article>";
   page += "<article class='stat'><span class='stat-label'>Session Hashes</span><strong id='mt'>" + htmlEscape(miningTotalHashesText) + "</strong></article>";
   page += "<article class='stat'><span class='stat-label'>Session Uptime</span><strong id='mu'>" + htmlEscape(miningUptimeText) + "</strong></article>";
@@ -3245,7 +3320,7 @@ void handleRoot() {
   page += "<article class='stat'><span class='stat-label'>Blocks Found</span><strong id='mb'>" + String(miningBlocksFound) + "</strong><small>Network-target hashes this run.</small></article>";
   page += "<article class='stat'><span class='stat-label'>Best Difficulty</span><strong id='md'>" + htmlEscape(miningBestText) + "</strong></article>";
   page += "<article class='stat'><span class='stat-label'>Pool Difficulty</span><strong id='mpd'>" + htmlEscape(fmtDecimals((float)miningPoolDifficulty, 4)) + "</strong></article>";
-  page += "</div><div class='miner-meta'><div><span>Worker</span><strong id='mw'>" + htmlEscape(cfgMiningWorker.isEmpty() ? "--" : cfgMiningWorker) + "</strong></div><div><span>Firmware</span><strong id='mv'>v1.0.4 / HELIOS-ENGINE</strong></div></div></div>";
+  page += "</div><div class='miner-meta'><div><span>Worker</span><strong id='mw'>" + htmlEscape(cfgMiningWorker.isEmpty() ? "--" : cfgMiningWorker) + "</strong></div><div><span>Firmware</span><strong id='mv'>v1.0.5 / HELIOS-PIPELINED-V2</strong></div></div></div>";
   page += "<div class='panel'><div class='section-head'><div><h2>Mining Settings</h2><p>Pool login for CHTA SHA-256 mining mode.</p></div></div>";
   page += "<form class='settings-form' data-section='mining' method='POST' action='/save' autocomplete='off'>";
   page += "<input type='hidden' name='section' value='mining'>";
@@ -3261,8 +3336,6 @@ void handleRoot() {
   page += "</div>";
   page += "<div class='actions' style='margin-top:18px'><button class='primary' type='submit' data-idle-label='Save Mining Settings'>Save Mining Settings</button></div>";
   page += "</form></div></section></div></section>";
-  page += "<section class='panel action-panel'><div><h2>Block Alert</h2><p>Dismiss the current block-found message on the device.</p></div>";
-  page += "<form method='POST' action='/clear-popup'><button class='secondary' type='submit'>Clear BLOCK FOUND notification</button></form></section>";
   page += "<section class='panel action-panel'><div><h2>WiFi Setup</h2><p>Reopen the WiFi setup portal.</p></div>";
   page += "<form method='POST' action='/wifi'><button class='secondary' type='submit'>Open WiFi Setup</button></form></section>";
   page += "<script>";
@@ -3273,9 +3346,9 @@ void handleRoot() {
   page += "if(location.search){history.replaceState(null,'',location.pathname+location.hash);}if(!notice.hidden)noticeTimer=setTimeout(()=>notice.hidden=true,6500);";
   page += "const miningEnabled=el('miningEnabled');const syncMiningRequired=()=>{const on=miningEnabled.checked;el('mine_host').required=on;el('mine_port').required=on;el('mine_user').required=on&&!el('wallet').value.trim();};miningEnabled.addEventListener('change',syncMiningRequired);el('wallet').addEventListener('input',syncMiningRequired);syncMiningRequired();";
   page += "document.querySelectorAll('.settings-form').forEach(form=>form.addEventListener('submit',async event=>{event.preventDefault();syncMiningRequired();if(!form.reportValidity())return;const button=form.querySelector('button[type=submit]');const idle=button.dataset.idleLabel||button.textContent;button.disabled=true;button.textContent='Saving...';showNotice('Saving settings...','busy',true);const body=new URLSearchParams();new FormData(form).forEach((value,key)=>body.append(key,value));body.set('response','json');try{const res=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},body:body.toString(),cache:'no-store'});let data={};try{data=await res.json();}catch(e){}if(!res.ok||!data.ok)throw new Error(data.message||'The device could not save these settings.');showNotice(data.message||'Settings saved.','success');if(form.dataset.section==='mining')showTab('mining');setTimeout(refreshStatus,350);}catch(error){showNotice(error.message||'Save failed. Check the connection and try again.','error',true);}finally{button.disabled=false;button.textContent=idle;}}));";
-  page += "const fmt=(n,d=2)=>Number.isFinite(n)?n.toFixed(d):'--';const priceFmt=n=>Number.isFinite(n)?n.toFixed(n<.0001?8:(n<.01?6:4)):'--';const prefix=c=>c==='GBP'?'\\u00A3':(c==='CAD'?'CAD$':'$');const hashFmt=n=>Number.isFinite(n)?Math.round(n)+' KH/s':'--';const countFmt=n=>Number.isFinite(n)?(n>=1e9?(n/1e9).toFixed(2)+'B':(n>=1e6?(n/1e6).toFixed(2)+'M':(n>=1e3?(n/1e3).toFixed(2)+'K':Math.round(n)))):'--';";
+  page += "const fmt=(n,d=2)=>Number.isFinite(n)?n.toFixed(d):'--';const priceFmt=n=>Number.isFinite(n)?n.toFixed(n<.0001?8:(n<.01?6:4)):'--';const prefix=c=>c==='EUR'?'\\u20AC':(c==='GBP'?'\\u00A3':(c==='CAD'?'CAD$':'$'));const hashFmt=n=>Number.isFinite(n)?Math.round(n)+' kH/s':'--';const countFmt=n=>Number.isFinite(n)?(n>=1e9?(n/1e9).toFixed(2)+'B':(n>=1e6?(n/1e6).toFixed(2)+'M':(n>=1e3?(n/1e3).toFixed(2)+'K':Math.round(n)))):'--';";
   page += "const uptimeFmt=n=>{n=Math.max(0,Math.floor(Number(n)||0));const h=Math.floor(n/3600),m=Math.floor(n/60)%60,s=n%60;return [h,m,s].map(v=>String(v).padStart(2,'0')).join(':');};const diffFmt=n=>Number.isFinite(n)?(n>=1000000?(n/1000000).toFixed(2)+'M':(n>=1000?(n/1000).toFixed(2)+'K':(n>=1?n.toFixed(2):(n>=0.0001?n.toFixed(4):(n>0?'<0.0001':'0.00'))))):'--';";
-  page += "async function refreshStatus(){if(statusBusy)return;statusBusy=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);try{const res=await fetch('/status',{cache:'no-store',signal:controller.signal});if(!res.ok)return;const s=await res.json();el('ci').textContent='IP: '+(s.ip||'NO WIFI');el('cs').textContent='Status: '+(s.status||'BOOT');el('cc').textContent='Currency: '+(s.currency||'USD')+' | '+(s.currency_name||'US Dollar');el('bd').textContent=s.have_wallet_data?fmt(s.balance_chta)+' CHTA':(s.wallet_configured?'Waiting for wallet':'Add wallet address');el('wf').textContent=s.have_wallet_data&&s.have_fiat_data?(prefix(s.currency)+fmt(s.wallet_fiat)):((s.currency||'USD')+' WAIT');el('pf').textContent=s.have_fiat_data?(prefix(s.currency)+priceFmt(s.chta_fiat)):((s.currency||'USD')+' WAIT');el('sm').textContent=s.flip?'Flipped 180':'Standard';el('ms0').textContent=s.mining_enabled?(s.mining_status||'STARTING'):'OFF';el('mp0').textContent=s.mining_pool?(s.mining_pool+':'+s.mining_pool_port):'No pool configured';el('mh').textContent=hashFmt(s.mining_hashrate_kh);el('me').textContent=s.mining_enabled?(s.mining_engine||'CPU FALLBACK'):'OFF';el('mt').textContent=countFmt(s.mining_total_hashes);el('mu').textContent=uptimeFmt(s.mining_uptime_seconds);el('ma').textContent=s.mining_accepted_shares||0;el('mr').textContent=s.mining_rejected_shares||0;el('ms').textContent=s.mining_submitted_shares||0;el('mp').textContent=s.mining_pending_shares||0;el('mb').textContent=s.mining_blocks_found||0;el('md').textContent=diffFmt(s.mining_best_diff);el('mpd').textContent=diffFmt(s.mining_pool_difficulty);el('mw').textContent=s.mining_worker||'--';el('mv').textContent='v'+(s.firmware_version||'1.0.4')+' / '+(s.mining_build||'HELIOS-ENGINE');}catch(e){}finally{clearTimeout(timer);statusBusy=false;}}refreshStatus();setInterval(refreshStatus,1200);";
+  page += "async function refreshStatus(){if(statusBusy)return;statusBusy=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);try{const res=await fetch('/status',{cache:'no-store',signal:controller.signal});if(!res.ok)return;const s=await res.json();el('ci').textContent='IP: '+(s.ip||'NO WIFI');el('cs').textContent='Status: '+(s.status||'BOOT');el('cc').textContent='Currency: '+(s.currency||'USD')+' | '+(s.currency_name||'US Dollar');el('bd').textContent=s.have_wallet_data?fmt(s.balance_chta)+' CHTA':(s.wallet_configured?'Waiting for wallet':'Add wallet address');el('wf').textContent=s.have_wallet_data&&s.have_fiat_data?(prefix(s.currency)+fmt(s.wallet_fiat)):((s.currency||'USD')+' WAIT');el('pf').textContent=s.have_fiat_data?(prefix(s.currency)+priceFmt(s.chta_fiat)):((s.currency||'USD')+' WAIT');el('sm').textContent=s.flip?'Flipped 180':'Standard';el('ms0').textContent=s.mining_enabled?(s.mining_status||'STARTING'):'OFF';el('mp0').textContent=s.mining_pool?(s.mining_pool+':'+s.mining_pool_port):'No pool configured';el('mh').textContent=hashFmt(s.mining_hashrate_kh);el('mhr').textContent='Primary: '+hashFmt(s.mining_primary_hashrate_kh)+' | Helper: '+hashFmt(s.mining_auxiliary_hashrate_kh);el('me').textContent=s.mining_enabled?(s.mining_engine||'CPU FALLBACK'):'OFF';el('mt').textContent=countFmt(s.mining_total_hashes);el('mu').textContent=uptimeFmt(s.mining_uptime_seconds);el('ma').textContent=s.mining_accepted_shares||0;el('mr').textContent=s.mining_rejected_shares||0;el('ms').textContent=s.mining_submitted_shares||0;el('mp').textContent=s.mining_pending_shares||0;el('mb').textContent=s.mining_blocks_found||0;el('md').textContent=diffFmt(s.mining_best_diff);el('mpd').textContent=diffFmt(s.mining_pool_difficulty);el('mw').textContent=s.mining_worker||'--';el('mv').textContent='v'+(s.firmware_version||'1.0.5')+' / '+(s.mining_build||'HELIOS-PIPELINED-V2');}catch(e){}finally{clearTimeout(timer);statusBusy=false;}}refreshStatus();setInterval(refreshStatus,1200);";
   page += "</script></main></body></html>";
   server.send(200, "text/html", page);
 }
@@ -3426,6 +3499,7 @@ void handleStatusJson() {
   json += "\"chta_usd\":" + String(chtaPriceUsd, 8) + ",";
   json += "\"chta_gbp\":" + String(chtaPriceGbp, 8) + ",";
   json += "\"chta_cad\":" + String(chtaPriceCad, 8) + ",";
+  json += "\"chta_eur\":" + String(chtaPriceEur, 8) + ",";
   json += "\"chta_fiat\":" + String(currentChtaFiatPrice(), 8) + ",";
   json += "\"price_source\":\"gleec_wallet_tickers_v2_or_coinpaprika\",";
   json += "\"wallet_fiat\":" + String(walletFiatValue, 8) + ",";
@@ -3444,6 +3518,10 @@ void handleStatusJson() {
   json += "\"mining_hashrate_kh\":" + String(miningHashrateKh, 3) + ",";
   json += "\"mining_primary_hashrate_kh\":" + String(diagnostics.primaryHashrateKh, 3) + ",";
   json += "\"mining_auxiliary_hashrate_kh\":" + String(diagnostics.auxiliaryHashrateKh, 3) + ",";
+  json += "\"mining_auxiliary_mode\":\"" + jsonEscape(diagnostics.auxiliaryMode) + "\",";
+  json += "\"mining_auxiliary_budget_us\":" + String(diagnostics.auxiliaryRunBudgetUs) + ",";
+  json += "\"mining_auxiliary_slice_yields\":" + String(diagnostics.auxiliarySliceYields) + ",";
+  json += "\"mining_auxiliary_balance_waits\":" + String(diagnostics.auxiliaryBalanceWaits) + ",";
   json += "\"mining_fast_sha\":" + String(soloHunterSha256FastPathActive() ? "true" : "false") + ",";
   json += "\"mining_sha_timing\":\"" + jsonEscape(soloHunterSha256Timing()) + "\",";
   json += "\"mining_sha_fallback\":\"" + jsonEscape(soloHunterSha256LastFallback()) + "\",";
@@ -3465,8 +3543,8 @@ void handleStatusJson() {
   json += "\"mining_best_diff\":" + String(miningBestDiff, 4) + ",";
   json += "\"mining_pool_difficulty\":" + String(miningPoolDifficulty, 6) + ",";
   json += "\"refresh_pending\":" + String((pendingWalletRefresh || pendingFiatRefresh) ? "true" : "false") + ",";
-  json += "\"firmware_version\":\"1.0.4\",";
-  json += "\"mining_build\":\"HELIOS-ENGINE\",";
+  json += "\"firmware_version\":\"1.0.5\",";
+  json += "\"mining_build\":\"HELIOS-PIPELINED-V2\",";
   json += "\"flip\":" + String(cfgFlip ? "true" : "false");
   json += "}";
   server.send(200, "application/json", json);
@@ -3513,6 +3591,7 @@ void chtaForegroundTask(void*) {
 }
 
 void setup() {
+  heliosNetworkMemoryBegin();
   setCpuFrequencyMhz(240);
 #if CONFIG_PM_ENABLE
   esp_pm_config_t powerConfig = {};
@@ -3528,6 +3607,8 @@ void setup() {
   rearLedOn();
 
   tft.init();
+  touchSpi.begin(25, 39, 32, 33);
+  touch.begin(touchSpi);
   loadPrefs();
   applyRotation();
   tft.setTextDatum(top_left);
@@ -3587,7 +3668,11 @@ void loop() {
 
 void serviceChtaForeground() {
   rearLedOn();
-  server.handleClient();
+  serviceBlockPopupTouch();
+  {
+    HeliosNetworkMemoryGuard webWork(0);
+    if (webWork) server.handleClient();
+  }
 
   if (portalMode) {
     runWifiManagerPortal();
@@ -3597,7 +3682,7 @@ void serviceChtaForeground() {
 
   if (WiFi.status() != WL_CONNECTED) {
     if (!isBlockPopupVisible()) drawConnectionStatus();
-    delay(100);
+    delay(isBlockPopupVisible() ? 20 : 100);
     return;
   }
 
